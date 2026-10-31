@@ -241,7 +241,9 @@ def generate(report: dict, niche: str | None = None, keyword_volumes: dict[str, 
             payoff = " ".join(near).strip(" ,.") or None
 
     # ---- TikTok: search keyword inside the first 50 characters --------------------------
-    hook_line = first or f"Everything about {primary} in {int(duration) or 30} seconds"
+    hook_line = first or f"Everything about {primary} in {int(duration) or 30} seconds."
+    if hook_line[-1] not in ".!?…":
+        hook_line += "."
     lead = f"{P}: "
     tt_caption = lead + hook_line[0].lower() + hook_line[1:] if hook_line else lead.strip()
     body = ""
