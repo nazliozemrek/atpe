@@ -1,6 +1,8 @@
-// Builds atpe-mobile.html: ATPE.jsx compiled with TypeScript (classic JSX → React.createElement),
-// Tailwind compiled to only the classes used, both inlined; libraries load from jsDelivr
-// (exact npm versions, UMD builds).
+// Builds one single-file HTML page per UI, each = engine.jsx + that UI, compiled with
+// TypeScript (classic JSX → React.createElement) plus Tailwind compiled to only the classes
+// used, both inlined; libraries load from jsDelivr (exact npm versions, UMD builds).
+//   ATPE.jsx        → atpe-mobile.html  (pro view)
+//   ATPE-Simple.jsx → atpe-simple.html  (everyday view, "Viral Check")
 // Usage: node build.mjs   (run from this folder; uses ../frontend/node_modules)
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync, mkdtempSync } from "node:fs";
@@ -14,23 +16,31 @@ const nm = join(here, "../frontend/node_modules");
 const require = createRequire(join(nm, "noop.js"));
 const ts = require("typescript");
 
-const src = readFileSync(join(here, "ATPE.jsx"), "utf8");
-const out = ts.transpileModule(src, {
-  compilerOptions: { jsx: ts.JsxEmit.React, target: ts.ScriptTarget.ES2019, module: ts.ModuleKind.None, removeComments: true },
-  reportDiagnostics: true,
-  fileName: "ATPE.jsx",
-});
-if (out.diagnostics?.length) {
-  for (const d of out.diagnostics) console.error(ts.flattenDiagnosticMessageText(d.messageText, "\n"));
-  process.exit(1);
+const TARGETS = [
+  { ui: "ATPE.jsx", out: "atpe-mobile.html", title: "ATPE Mobile" },
+  { ui: "ATPE-Simple.jsx", out: "atpe-simple.html", title: "Viral Check" },
+];
+const engine = readFileSync(join(here, "engine.jsx"), "utf8");
+
+function compile(ui) {
+  const src = `${engine}\n${readFileSync(join(here, ui), "utf8")}`;
+  const out = ts.transpileModule(src, {
+    compilerOptions: { jsx: ts.JsxEmit.React, target: ts.ScriptTarget.ES2019, module: ts.ModuleKind.None, removeComments: true },
+    reportDiagnostics: true,
+    fileName: ui,
+  });
+  if (out.diagnostics?.length) {
+    for (const d of out.diagnostics) console.error(ui, ts.flattenDiagnosticMessageText(d.messageText, "\n"));
+    process.exit(1);
+  }
+  return out.outputText.replace(/^"use strict";\s*/, "").replace(/<\/script/gi, "<\\/script");
 }
-const js = out.outputText.replace(/^"use strict";\s*/, "").replace(/<\/script/gi, "<\\/script");
 
 const tmp = mkdtempSync(join(tmpdir(), "atpe-tw-"));
 const config = join(tmp, "tailwind.config.cjs");
 const color = (v) => `rgb(var(--${v}) / <alpha-value>)`;
 writeFileSync(config, `module.exports = {
-  content: [${JSON.stringify(join(here, "ATPE.jsx"))}],
+  content: ${JSON.stringify(["engine.jsx", ...TARGETS.map((t) => t.ui)].map((f) => join(here, f)))},
   theme: { extend: {
     colors: { ink: "${color("ink")}", panel: "${color("panel")}", line: "${color("line")}", fg: "${color("fg")}", muted: "${color("muted")}",
       emerald: "${color("emerald")}", amber: "${color("amber")}", risk: "${color("risk")}", sky: "${color("sky")}" },
@@ -45,13 +55,15 @@ const css = readFileSync(cssOut, "utf8");
 const v = (p) => require(`${p}/package.json`).version;
 const cdn = (pkg, file) => `https://cdn.jsdelivr.net/npm/${pkg}@${v(pkg)}/${file}`;
 
-const html = `<title>ATPE Mobile</title>
+for (const { ui, out, title } of TARGETS) {
+const js = compile(ui);
+const html = `<title>${title}</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <style>${css}</style>
-<div id="root"><p style="padding:48px 0;text-align:center;color:rgb(139 151 169);font:14px system-ui">Loading ATPE…</p></div>
+<div id="root"><p style="padding:48px 0;text-align:center;color:rgb(139 151 169);font:14px system-ui">Loading ${title}…</p></div>
 <script src="${cdn("react", "umd/react.production.min.js")}"></script>
 <script src="${cdn("react-dom", "umd/react-dom.production.min.js")}"></script>
 <script src="${cdn("prop-types", "prop-types.min.js")}"></script>
@@ -66,5 +78,6 @@ ${js}
 }
 </script>
 `;
-writeFileSync(join(here, "atpe-mobile.html"), html);
-console.log(`atpe-mobile.html ${(html.length / 1024).toFixed(0)} KB (css ${(css.length / 1024).toFixed(0)} KB, js ${(js.length / 1024).toFixed(0)} KB)`);
+writeFileSync(join(here, out), html);
+console.log(`${out} ${(html.length / 1024).toFixed(0)} KB (css ${(css.length / 1024).toFixed(0)} KB, js ${(js.length / 1024).toFixed(0)} KB)`);
+}
