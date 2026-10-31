@@ -1,0 +1,111 @@
+/* Layout: one column on phones (sticky tab bar, stacked instrument panels), two columns
+ * from lg up. Single committed dark "flight console" look, so no light palette. */
+:root {
+  --ink: 9 12 17;        /* page ground, blue-black */
+  --panel: 18 24 33;     /* instrument panels */
+  --line: 34 43 56;      /* hairlines, tracks */
+  --fg: 231 236 243;     /* primary text */
+  --muted: 139 151 169;  /* secondary text, axis labels */
+  --emerald: 52 245 166; /* pass, outliers, primary action */
+  --amber: 255 180 58;   /* warnings, rising posts, cut marks */
+  --risk: 255 92 122;    /* swipe risk, failures */
+  --sky: 92 200 255;     /* audio energy */
+  --font-display: "Chakra Petch", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  color-scheme: dark;
+}
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  background: rgb(var(--ink));
+  color: rgb(var(--fg));
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.45;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  -webkit-tap-highlight-color: transparent;
+}
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0 0 auto;
+  height: env(safe-area-inset-top, 0px);
+  z-index: 30;
+  background: rgb(var(--ink));
+}
+h1, h2, h3 { text-wrap: balance; }
+:focus-visible { outline: 2px solid rgb(var(--emerald)); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+@layer components {
+  .appbar {
+    position: sticky;
+    top: env(safe-area-inset-top, 0px);
+    z-index: 20;
+    margin: 0 calc(-1 * max(16px, env(safe-area-inset-left, 0px)));
+    padding: 12px max(16px, env(safe-area-inset-right, 0px)) 12px max(16px, env(safe-area-inset-left, 0px));
+    background: rgb(var(--ink) / 0.92);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-bottom: 1px solid rgb(var(--line));
+  }
+  .panel {
+    background: rgb(var(--panel));
+    border: 1px solid rgb(var(--line));
+    border-radius: 14px;
+    min-width: 0;
+  }
+  .hud {
+    border-color: rgb(var(--emerald) / 0.35);
+    background-image: linear-gradient(160deg, rgb(var(--emerald) / 0.07), transparent 55%);
+  }
+  .eyebrow {
+    font-family: var(--font-data);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgb(var(--muted));
+  }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid;
+    border-radius: 999px;
+    padding: 1px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .legend { display: inline-block; width: 10px; height: 6px; border-radius: 2px; margin-right: 5px; vertical-align: middle; }
+  .input {
+    background: rgb(var(--ink));
+    border: 1px solid rgb(var(--line));
+    border-radius: 8px;
+    padding: 8px 10px;
+    color: rgb(var(--fg));
+    font-size: 16px; /* 16px stops iOS from zooming into the field */
+  }
+  .input:focus { border-color: rgb(var(--emerald)); outline: none; }
+  .btn-ghost, .btn-primary {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-size: 12.5px;
+    font-weight: 600;
+    white-space: nowrap;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+  }
+  .btn-ghost { border: 1px solid rgb(var(--line)); color: rgb(var(--fg)); }
+  .btn-ghost:hover:not(:disabled) { border-color: rgb(var(--muted)); }
+  .btn-primary { background: rgb(var(--emerald)); color: rgb(var(--ink)); }
+  .btn-ghost:disabled, .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+  .recharts-wrapper, .recharts-surface { outline: none; }
+}
