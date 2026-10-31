@@ -18,12 +18,15 @@ function PreFlight() {
   const job = useJob<{ audit_id: number }>();
   const [runOcr, setRunOcr] = useState(true);
   const [runAsr, setRunAsr] = useState(true);
+  const [niche, setNiche] = useState("");
+  const niches = useApi<string[]>("/api/outlier/niches");
 
   const start = async (file: File) => {
     const form = new FormData();
     form.append("file", file);
     form.append("run_ocr", String(runOcr));
     form.append("run_asr", String(runAsr));
+    if (niche) form.append("niche", niche);
     const result = await job.run(() => apiUpload("/api/audits", form));
     if (result) {
       await audits.reload();
@@ -64,6 +67,17 @@ function PreFlight() {
           <label className="flex items-center gap-2">
             <input type="checkbox" checked={runOcr} onChange={(e) => setRunOcr(e.target.checked)} className="accent-emerald-500" />
             Read on-screen text hook
+          </label>
+          <label className="flex items-center gap-2">
+            Grade against
+            <select className="input w-auto py-1 text-sm" value={niche} onChange={(e) => setNiche(e.target.value)} aria-label="Niche benchmark">
+              <option value="">all 10x outliers</option>
+              {(niches.data ?? []).map((n) => (
+                <option key={n} value={n}>
+                  {n} outliers
+                </option>
+              ))}
+            </select>
           </label>
         </div>
         <div className="mt-3">

@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Iterator
 
-from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, String, Text, create_engine
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, create_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 from config import DB_PATH
@@ -110,6 +110,119 @@ class ExportJob(Base):
             "audit_id": self.audit_id,
             "result": self.result,
         }
+
+
+class CreatorScan(Base):
+    """One metadata sweep of a creator's last N posts, with every post's outlier score."""
+
+    __tablename__ = "creator_scans"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    creator_handle: Mapped[str] = mapped_column(String(120), index=True)
+    platform: Mapped[str] = mapped_column(String(20))
+    profile_url: Mapped[str] = mapped_column(Text)
+    niche: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    last_n: Mapped[int] = mapped_column(Integer)
+    outlier_threshold: Mapped[float] = mapped_column(Float)
+    creator_baseline: Mapped[float] = mapped_column(Float)
+    outlier_count: Mapped[int] = mapped_column(Integer, default=0)
+    posts: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    warnings: Mapped[list[str]] = mapped_column(JSON, default=list)
+
+    def summary(self) -> dict[str, Any]:
+        return {
+            "scan_id": self.id,
+            "created_at": self.created_at.isoformat(),
+            "creator_handle": self.creator_handle,
+            "platform": self.platform,
+            "profile_url": self.profile_url,
+            "niche": self.niche,
+            "last_n": self.last_n,
+            "outlier_threshold": self.outlier_threshold,
+            "creator_baseline": self.creator_baseline,
+            "outlier_count": self.outlier_count,
+            "post_count": len(self.posts or []),
+        }
+
+    def full(self) -> dict[str, Any]:
+        return {**self.summary(), "posts": self.posts, "warnings": self.warnings}
+
+
+class ViralBlueprint(Base):
+    """A decompiled 10x+ outlier. Scalar telemetry is in columns so the niche benchmark
+    can aggregate it; curves and transcripts are in `telemetry`."""
+
+    __tablename__ = "viral_blueprints"
+    __table_args__ = (UniqueConstraint("platform", "video_id", name="uq_blueprint_video"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+    scan_id: Mapped[int | None] = mapped_column(ForeignKey("creator_scans.id", ondelete="SET NULL"), nullable=True)
+    creator_handle: Mapped[str] = mapped_column(String(120), index=True)
+    platform: Mapped[str] = mapped_column(String(20))
+    niche: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    video_id: Mapped[str] = mapped_column(String(64))
+    webpage_url: Mapped[str] = mapped_column(Text)
+    title: Mapped[str | None] = mapped_column(Text, nullable=True)
+    posted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    views: Mapped[int] = mapped_column(Integer)
+    views_estimated: Mapped[bool] = mapped_column(Boolean, default=False)
+    likes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    comments: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    reposts: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    baseline: Mapped[float] = mapped_column(Float)
+    outlier_score: Mapped[float] = mapped_column(Float, index=True)
+    engagement_velocity: Mapped[float] = mapped_column(Float)
+
+    duration_sec: Mapped[float | None] = mapped_column(Float, nullable=True)
+    total_cuts: Mapped[int] = mapped_column(Integer)
+    cuts_per_minute: Mapped[float] = mapped_column(Float)
+    avg_shot_length_sec: Mapped[float] = mapped_column(Float)
+    first_cut_timestamp_sec: Mapped[float | None] = mapped_column(Float, nullable=True)
+    max_static_gap_sec: Mapped[float] = mapped_column(Float)
+    hook_optical_flow_score: Mapped[float] = mapped_column(Float)
+    audio_onset_latency_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
+    speaking_wpm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    hook_transcript_3s: Mapped[str] = mapped_column(Text, default="")
+    telemetry: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+    def summary(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "created_at": self.created_at.isoformat(),
+            "scan_id": self.scan_id,
+            "creator_handle": self.creator_handle,
+            "platform": self.platform,
+            "niche": self.niche,
+            "video_id": self.video_id,
+            "webpage_url": self.webpage_url,
+            "title": self.title,
+            "posted_at": self.posted_at.isoformat() if self.posted_at else None,
+            "views": self.views,
+            "views_estimated": self.views_estimated,
+            "likes": self.likes,
+            "comments": self.comments,
+            "reposts": self.reposts,
+            "baseline": self.baseline,
+            "outlier_score": self.outlier_score,
+            "engagement_velocity": self.engagement_velocity,
+            "duration_sec": self.duration_sec,
+            "total_cuts": self.total_cuts,
+            "cuts_per_minute": self.cuts_per_minute,
+            "avg_shot_length_sec": self.avg_shot_length_sec,
+            "first_cut_timestamp_sec": self.first_cut_timestamp_sec,
+            "max_static_gap_sec": self.max_static_gap_sec,
+            "hook_optical_flow_score": self.hook_optical_flow_score,
+            "audio_onset_latency_ms": self.audio_onset_latency_ms,
+            "speaking_wpm": self.speaking_wpm,
+            "hook_transcript_3s": self.hook_transcript_3s,
+        }
+
+    def full(self) -> dict[str, Any]:
+        return {**self.summary(), "telemetry": self.telemetry}
 
 
 class Job(Base):

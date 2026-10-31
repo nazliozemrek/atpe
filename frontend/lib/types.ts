@@ -301,29 +301,41 @@ export interface Blueprint {
   };
 }
 
-export interface CreatorScan {
+export interface CreatorScanSummary {
   scan_id: number;
+  created_at: string;
   creator_handle: string;
   platform: string;
   profile_url: string;
+  niche: string | null;
   last_n: number;
   outlier_threshold: number;
   creator_baseline: number;
+  outlier_count: number;
+  post_count: number;
+}
+
+export interface CreatorScan extends CreatorScanSummary {
   posts: ScoredPost[];
   blueprints: Blueprint[];
   warnings: string[];
+  channel?: string | null;
 }
+
+export type GoldenKey =
+  | "target_cuts_per_minute"
+  | "target_avg_shot_length_sec"
+  | "target_first_cut_before_sec"
+  | "target_max_audio_latency_ms"
+  | "target_hook_optical_flow"
+  | "target_speaking_wpm";
 
 export interface GoldenTargets {
   sample_size: number;
   niche: string | null;
-  targets: {
-    target_cuts_per_minute: number | null;
-    target_avg_shot_length_sec: number | null;
-    target_first_cut_before_sec: number | null;
-    target_max_audio_latency_ms: number | null;
-    target_hook_optical_flow: number | null;
-    target_speaking_wpm: number | null;
-  };
-  spread: Record<string, { p25: number | null; p75: number | null; n: number }>;
+  creator: string | null;
+  min_score: number;
+  creators: string[];
+  targets: Record<GoldenKey, number | null>;
+  spread: Record<GoldenKey, { p25: number | null; p75: number | null; n: number }>;
 }

@@ -14,7 +14,7 @@ and Whisper; a 30 s 1080p clip audits in roughly 20–60 s on a laptop CPU.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 
@@ -56,7 +56,12 @@ def audit(
     run_ocr: bool = True,
     run_asr: bool = True,
     cfg: AnalysisConfig = CONFIG,
+    golden_targets: dict[str, Any] | Literal["auto"] | None = "auto",
+    niche: str | None = None,
 ) -> dict[str, Any]:
+    """`golden_targets="auto"` grades the draft against the 10x+ blueprints stored in
+    viral_blueprints (filtered by `niche` when given); pass a dict to use specific
+    targets, or None to skip the niche comparison (the decompiler does, for references)."""
     path = str(path)
     progress(0.01, "Probing container")
     info = probe(path)
@@ -98,12 +103,30 @@ def audit(
         except Exception as exc:  # noqa: BLE001
             warnings.append({"code": "ocr_unavailable", "message": f"On-screen text check skipped: {type(exc).__name__}: {exc}"})
 
+    niche_info: dict[str, Any] | None = None
+    if golden_targets is not None:
+        try:
+            from services import outlier_decompiler as od
+
+            golden = od.golden_targets(niche=niche) if golden_targets == "auto" else golden_targets
+            if golden.get("sample_size"):
+                progress(0.9, "Measuring against 10x niche outliers")
+                draft_tel = od.extract_telemetry(path, transcript=transcript if asr_ran else None, run_asr=False)
+                niche_info = od.niche_delta(draft_tel, golden)
+            else:
+                niche_info = od.niche_delta({}, golden)
+        except Exception as exc:  # noqa: BLE001
+            warnings.append({"code": "niche_benchmark_unavailable",
+                             "message": f"Niche benchmark skipped: {type(exc).__name__}: {exc}"})
+
     progress(0.94, "Scoring")
     hook = _hook(scan, info, cuts, t_db, db, onsets, first_sound, transcript, ocr if ocr_ran else None, cfg)
     pacing = _pacing(scan, cuts, transcript, duration, cfg)
     loop = _loop(scan, audio, sr, t_db, db, first_sound, last_sound, transcript, duration, cfg)
     timeline, zones = _timeline(scan, cuts, t_db, db, transcript, pacing, duration, cfg)
     recs = _recommendations(hook, pacing, loop, zones, info)
+    if niche_info and niche_info.get("available"):
+        recs = [{"severity": "medium", "area": "niche", "at_s": None, "message": m} for m in niche_info["messages"]] + recs
 
     progress(1.0, "Done")
     return to_jsonable({
@@ -117,6 +140,7 @@ def audit(
         "transcript": transcript,
         "ocr": [{"t": t, "detections": d} for t, d in sorted(ocr.items())],
         "analysis": {"asr": asr_ran, "ocr": ocr_ran, "warnings": warnings},
+        "niche_delta": niche_info,
         "config": {
             "hook_window_s": cfg.hook_window_s,
             "stagnation_s": cfg.stagnation_s,

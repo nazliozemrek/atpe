@@ -228,7 +228,7 @@ def decompile(
     def sub(p: float, stage: str) -> None:
         progress(0.15 + 0.8 * p, stage)
 
-    report = audit(path, progress=sub, cfg=cfg)
+    report = audit(path, progress=sub, cfg=cfg, golden_targets=None)
     progress(0.96, "Building blueprint")
     blueprint = build_blueprint(path, report, cfg)
     return {"path": str(path), "source_stats": meta, "platform": platform, "blueprint": blueprint}

@@ -13,8 +13,8 @@ export function Card({ title, action, children, className }: { title?: ReactNode
   return (
     <section className={clsx("card", className)}>
       {(title || action) && (
-        <header className="mb-3 flex items-center justify-between gap-3">
-          {title && <h2 className="text-sm font-semibold text-zinc-200">{title}</h2>}
+        <header className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          {title && <h2 className="min-w-0 text-sm font-semibold text-zinc-200">{title}</h2>}
           {action}
         </header>
       )}

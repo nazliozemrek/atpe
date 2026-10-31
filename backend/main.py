@@ -9,11 +9,9 @@ from __future__ import annotations
 
 import re
 import shutil
-import traceback
 import uuid
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, Callable, Literal
+from typing import Literal
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,8 +20,10 @@ from pydantic import BaseModel, Field, HttpUrl
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from config import CORS_ORIGINS, PREVIEW_DIR, REFERENCE_DIR, UPLOAD_DIR, WORKER_THREADS
+from config import CORS_ORIGINS, PREVIEW_DIR, REFERENCE_DIR, UPLOAD_DIR
 from db import AuditLog, ExportJob, Job, SessionLocal, ViralTemplate, get_session, init_db
+from jobs import fail_interrupted_jobs, submit
+from routers import outlier
 from services import copy_engine, decompiler, optimizer, safe_zones, video_auditor
 from services.media import MediaError, probe
 
@@ -35,7 +35,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-executor = ThreadPoolExecutor(max_workers=WORKER_THREADS, thread_name_prefix="atpe")
+app.include_router(outlier.router)
 VIDEO_TYPES = {".mp4", ".mov", ".m4v", ".webm", ".mkv"}
 Platform = Literal["tiktok", "reels"]
 Fit = Literal["pad", "crop"]
@@ -44,51 +44,7 @@ Fit = Literal["pad", "crop"]
 @app.on_event("startup")
 def _startup() -> None:
     init_db()
-    # Jobs that were running when the server stopped will never finish.
-    with SessionLocal() as s:
-        for job in s.scalars(select(Job).where(Job.status.in_(["queued", "running"]))):
-            job.status, job.error = "error", "Server restarted before the job finished."
-        s.commit()
-
-
-# ----------------------------------------------------------------------------------
-# Job runner
-# ----------------------------------------------------------------------------------
-
-def _update_job(job_id: str, **fields: Any) -> None:
-    with SessionLocal() as s:
-        job = s.get(Job, job_id)
-        if job is None:
-            return
-        for k, v in fields.items():
-            setattr(job, k, v)
-        s.commit()
-
-
-def submit(kind: str, fn: Callable[[Callable[[float, str], None]], dict]) -> dict:
-    job_id = str(uuid.uuid4())
-    with SessionLocal() as s:
-        s.add(Job(id=job_id, kind=kind))
-        s.commit()
-
-    last = {"p": -1.0}
-
-    def progress(p: float, stage: str) -> None:
-        if p - last["p"] >= 0.01 or p >= 1.0:
-            last["p"] = p
-            _update_job(job_id, progress=float(min(1.0, max(0.0, p))), stage=stage)
-
-    def run() -> None:
-        _update_job(job_id, status="running", stage="Starting")
-        try:
-            result = fn(progress)
-            _update_job(job_id, status="done", progress=1.0, stage="Done", result_ref=result)
-        except Exception as exc:  # noqa: BLE001 — surfaced to the client
-            traceback.print_exc()
-            _update_job(job_id, status="error", error=f"{type(exc).__name__}: {exc}")
-
-    executor.submit(run)
-    return {"job_id": job_id, "kind": kind, "status": "queued"}
+    fail_interrupted_jobs()
 
 
 @app.get("/api/jobs/{job_id}")
@@ -162,12 +118,14 @@ async def create_audit(
     file: UploadFile = File(...),
     run_ocr: bool = Form(True),
     run_asr: bool = Form(True),
+    niche: str | None = Form(None),
 ) -> dict:
     path = await _save_upload(file, UPLOAD_DIR)
     filename = file.filename or path.name
+    niche_key = niche.strip().lower() or None if niche else None
 
     def work(progress):
-        report = video_auditor.audit(path, progress=progress, run_ocr=run_ocr, run_asr=run_asr)
+        report = video_auditor.audit(path, progress=progress, run_ocr=run_ocr, run_asr=run_asr, niche=niche_key)
         with SessionLocal() as s:
             row = AuditLog(
                 filename=filename,
